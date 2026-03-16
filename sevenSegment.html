@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>8 Segment Editor (Original Shape)</title>
+    <style>
+        :root {
+            --bg-color: #f4f4f9;
+            --panel-bg: #ffffff;
+            --primary-color: #333;
+            --accent-color: #007bff;
+            /* Warna segmen mati (abu-abu muda seperti di deskripsi) */
+            --seg-off: #e0e0e0; 
+            /* Warna segmen menyala (merah) */
+            --seg-on: #ff0000;
+            /* Warna garis tepi (merah) */
+            --seg-stroke: #cc0000; 
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .app-container {
+            display: flex;
+            flex-wrap: wrap;
+            background: var(--panel-bg);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+            width: 100%;
+            max-width: 900px;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        .panel {
+            flex: 1;
+            min-width: 200px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: var(--primary-color);
+            border-bottom: 2px solid #eee;
+            padding-bottom: 5px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 8px;
+        }
+
+        .input-group label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 2px;
+        }
+
+        input[type="text"], select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 14px;
+            background: #f9f9f9;
+            color: #333;
+        }
+
+        input[type="text"]:read-only {
+            background: #eee;
+            cursor: default;
+        }
+
+        .display-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        svg {
+            /* Ukuran canvas disesuaikan agar muat semua koordinat Python (Max Y ~330) */
+            width: 280px; 
+            height: 360px;
+            cursor: pointer;
+            user-select: none;
+            /* Agar garis tajam */
+            shape-rendering: crispEdges; 
+        }
+
+        .segment {
+            fill: var(--seg-off);
+            stroke: var(--seg-stroke);
+            stroke-width: 2;
+            transition: fill 0.1s ease;
+        }
+
+        .segment.active {
+            fill: var(--seg-on);
+        }
+
+        .seg-label {
+            font-size: 14px;
+            font-weight: bold;
+            fill: #555;
+            pointer-events: none;
+        }
+
+        .pin-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .pin-label {
+            font-weight: bold;
+            width: 20px;
+        }
+
+        .pin-select {
+            width: 60px;
+        }
+
+        .btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background-color: var(--accent-color);
+            color: white;
+            margin-top: 10px;
+        }
+
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+
+        .btn-export {
+            background-color: #28a745;
+            color: white;
+            width: 100%;
+            margin-top: auto;
+        }
+
+        .btn-export:hover {
+            background-color: #218838;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .modal-body {
+            overflow-y: auto;
+            background: #f8f9fa;
+            padding: 10px;
+            border: 1px solid #ddd;
+            height: 300px;
+        }
+
+        .modal textarea {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: transparent;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            resize: none;
+            outline: none;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        @media (max-width: 700px) {
+            .app-container { flex-direction: column; }
+            svg { width: 220px; height: 280px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <!-- Panel Kiri -->
+    <div class="panel">
+        <h3>Common Cathode</h3>
+        <div class="input-group">
+            <label>Hex</label>
+            <input type="text" id="cath_hex" value="00" readonly>
+        </div>
+        <div class="input-group">
+            <label>Decimal</label>
+            <input type="text" id="cath_dec" value="0" readonly>
+        </div>
+        <div class="input-group">
+            <label>Binary</label>
+            <input type="text" id="cath_bin" value="00000000" readonly>
+        </div>
+
+        <div style="height: 10px;"></div>
+
+        <h3>Common Anode</h3>
+        <div class="input-group">
+            <label>Hex</label>
+            <input type="text" id="ano_hex" value="FF" readonly>
+        </div>
+        <div class="input-group">
+            <label>Decimal</label>
+            <input type="text" id="ano_dec" value="255" readonly>
+        </div>
+        <div class="input-group">
+            <label>Binary</label>
+            <input type="text" id="ano_bin" value="11111111" readonly>
+        </div>
+    </div>
+
+    <!-- Panel Tengah: Menggunakan Koordinat Persis Python -->
+    <div class="panel display-area">
+        <!-- ViewBox disesuaikan (0 0 260 340) agar muut semua koordinat python -->
+        <svg viewBox="0 0 260 340" xmlns="http://www.w3.org/2000/svg">
+            
+            <!-- SEGMENT A -->
+            <!-- Python: (90,30, 170,30, 185,45, 170,60, 90,60, 75,45) -->
+            <path id="seg_A" class="segment" d="M 90,30 L 170,30 L 185,45 L 170,60 L 90,60 L 75,45 Z"></path>
+            <text x="130" y="25" class="seg-label" text-anchor="middle">A</text>
+
+            <!-- SEGMENT B -->
+            <!-- Python: (185,55, 205,75, 205,145, 185,165, 165,145, 165,75) -->
+            <path id="seg_B" class="segment" d="M 185,55 L 205,75 L 205,145 L 185,165 L 165,145 L 165,75 Z"></path>
+            <text x="220" y="110" class="seg-label" text-anchor="middle">B</text>
+
+            <!-- SEGMENT C -->
+            <!-- Python: (185,175, 205,195, 205,265, 185,285, 165,265, 165,195) -->
+            <path id="seg_C" class="segment" d="M 185,175 L 205,195 L 205,265 L 185,285 L 165,265 L 165,195 Z"></path>
+            <text x="220" y="230" class="seg-label" text-anchor="middle">C</text>
+
+            <!-- SEGMENT D -->
+            <!-- Python: (90,290, 170,290, 185,305, 170,320, 90,320, 75,305) -->
+            <path id="seg_D" class="segment" d="M 90,290 L 170,290 L 185,305 L 170,320 L 90,320 L 75,305 Z"></path>
+            <text x="130" y="335" class="seg-label" text-anchor="middle">D</text>
+
+            <!-- SEGMENT E -->
+            <!-- Python: (55,195, 75,175, 95,195, 95,265, 75,285, 55,265) -->
+            <path id="seg_E" class="segment" d="M 55,195 L 75,175 L 95,195 L 95,265 L 75,285 L 55,265 Z"></path>
+            <text x="40" y="230" class="seg-label" text-anchor="end">E</text>
+
+            <!-- SEGMENT F -->
+            <!-- Python: (55,75, 75,55, 95,75, 95,145, 75,165, 55,145) -->
+            <path id="seg_F" class="segment" d="M 55,75 L 75,55 L 95,75 L 95,145 L 75,165 L 55,145 Z"></path>
+            <text x="40" y="110" class="seg-label" text-anchor="end">F</text>
+
+            <!-- SEGMENT G -->
+            <!-- Python: (90,155, 170,155, 185,170, 170,185, 90,185, 75,170) -->
+            <path id="seg_G" class="segment" d="M 90,155 L 170,155 L 185,170 L 170,185 L 90,185 L 75,170 Z"></path>
+            <text x="130" y="175" class="seg-label" text-anchor="middle">G</text>
+
+            <!-- SEGMENT P -->
+            <!-- Python: create_oval(215,290, 230,305) -> Center (222.5, 297.5), Radius 7.5 -->
+            <circle id="seg_P" class="segment" cx="222.5" cy="297.5" r="7.5"></circle>
+            <text x="245" y="300" class="seg-label" text-anchor="start">P</text>
+        </svg>
+    </div>
+
+    <!-- Panel Kanan -->
+    <div class="panel">
+        <h3>LED PIN Mapping</h3>
+        <div id="pin-container"></div>
+        <button class="btn btn-primary" id="btnUpdate">Update Map</button>
+        <button class="btn btn-export" id="btnExport">Export 0-9</button>
+    </div>
+</div>
+
+<!-- Modal Export -->
+<div class="modal-overlay" id="exportModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>7 Segment Table 0-9</h3>
+            <button class="close-btn" id="btnCloseModal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <textarea id="exportText" readonly></textarea>
+        </div>
+        <div style="margin-top: 10px; text-align: right;">
+            <button class="btn btn-primary" id="btnCopy">Copy to Clipboard</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var segments = ["A", "B", "C", "D", "E", "F", "G", "P"];
+        var pinMap = { "A": 0, "B": 1, "C": 2, "D": 3, "E": 4, "F": 5, "G": 6, "P": 7 };
+        var segState = {};
+        segments.forEach(s => segState[s] = 0);
+
+        // Event Klik Segmen
+        document.querySelectorAll('.segment').forEach(el => {
+            el.addEventListener('click', function() {
+                var seg = this.id.replace('seg_', '');
+                toggleSegment(seg);
+            });
+        });
+
+        // Setup Pin Controls
+        function createPinControls() {
+            var container = document.getElementById('pin-container');
+            container.innerHTML = '';
+            segments.forEach(s => {
+                var row = document.createElement('div');
+                row.className = 'pin-row';
+                var label = document.createElement('span');
+                label.className = 'pin-label';
+                label.innerText = s;
+                var select = document.createElement('select');
+                select.className = 'pin-select';
+                select.id = 'pin_' + s;
+                for (var j = 0; j < 8; j++) {
+                    var opt = document.createElement('option');
+                    opt.value = j;
+                    opt.innerText = j;
+                    if (j === pinMap[s]) opt.selected = true;
+                    select.appendChild(opt);
+                }
+                row.appendChild(label);
+                row.appendChild(select);
+                container.appendChild(row);
+            });
+        }
+
+        // Event Tombol
+        document.getElementById('btnUpdate').addEventListener('click', updateMapping);
+        document.getElementById('btnExport').addEventListener('click', showExport);
+        document.getElementById('btnCloseModal').addEventListener('click', closeExport);
+        document.getElementById('btnCopy').addEventListener('click', copyExport);
+        document.getElementById('exportModal').addEventListener('click', function(e) {
+            if (e.target === this) closeExport();
+        });
+
+        createPinControls();
+        calculate();
+
+        function calculate() {
+            var bits = [0,0,0,0,0,0,0,0];
+            segments.forEach(s => {
+                if (segState[s] === 1) bits[pinMap[s]] = 1;
+            });
+            var binaryStr = bits.slice().reverse().join('');
+            var decVal = parseInt(binaryStr, 2) || 0;
+            var hexVal = decVal.toString(16).toUpperCase().padStart(2, '0');
+
+            document.getElementById('cath_hex').value = hexVal;
+            document.getElementById('cath_dec').value = decVal;
+            document.getElementById('cath_bin').value = binaryStr;
+
+            var anoDec = (~decVal) & 0xFF;
+            var anoHex = anoDec.toString(16).toUpperCase().padStart(2, '0');
+            var anoBin = anoDec.toString(2).padStart(8, '0');
+
+            document.getElementById('ano_hex').value = anoHex;
+            document.getElementById('ano_dec').value = anoDec;
+            document.getElementById('ano_bin').value = anoBin;
+        }
+
+        function toggleSegment(seg) {
+            segState[seg] = segState[seg] === 1 ? 0 : 1;
+            var el = document.getElementById('seg_' + seg);
+            if (segState[seg] === 1) el.classList.add('active');
+            else el.classList.remove('active');
+            calculate();
+        }
+
+        function updateMapping() {
+            segments.forEach(s => {
+                pinMap[s] = parseInt(document.getElementById('pin_' + s).value);
+            });
+            calculate();
+            alert("Pin Map Updated!");
+        }
+
+        var digitSegments = {
+            0: ["A","B","C","D","E","F"], 1: ["B","C"], 2: ["A","B","G","E","D"],
+            3: ["A","B","C","D","G"], 4: ["F","G","B","C"], 5: ["A","F","G","C","D"],
+            6: ["A","F","G","E","C","D"], 7: ["A","B","C"], 8: ["A","B","C","D","E","F","G"],
+            9: ["A","B","C","D","F","G"]
+        };
+
+        function showExport() {
+            var text = "COMMON CATHODE\nDigit | Hex | Dec | Binary\n---------------------------\n";
+            var cathValues = [];
+            for (var digit = 0; digit <= 9; digit++) {
+                var bits = [0,0,0,0,0,0,0,0];
+                if (digitSegments[digit]) {
+                    digitSegments[digit].forEach(seg => bits[pinMap[seg]] = 1);
+                }
+                var binary = bits.slice().reverse().join('');
+                var dec = parseInt(binary, 2);
+                var hx = dec.toString(16).toUpperCase().padStart(2, '0');
+                cathValues.push(dec);
+                text += `${digit}     | ${hx}  | ${dec.toString().padStart(3, ' ')} | ${binary}\n`;
+            }
+            text += "\nCOMMON ANODE\nDigit | Hex | Dec | Binary\n---------------------------\n";
+            for (var digit = 0; digit <= 9; digit++) {
+                var cath = cathValues[digit];
+                var ano = (~cath) & 0xFF;
+                var binary = ano.toString(2).padStart(8, '0');
+                var hx = ano.toString(16).toUpperCase().padStart(2, '0');
+                text += `${digit}     | ${hx}  | ${ano.toString().padStart(3, ' ')} | ${binary}\n`;
+            }
+            text += "\nARDUINO ARRAY\n\n";
+            text += "byte segCathode[10] = {" + cathValues.map(v => "0x" + v.toString(16).toUpperCase().padStart(2,'0')).join(",") + "};\n\n";
+            text += "byte segAnode[10] = {" + cathValues.map(v => "0x" + ((~v)&0xFF).toString(16).toUpperCase().padStart(2,'0')).join(",") + "};";
+
+            document.getElementById('exportText').value = text;
+            document.getElementById('exportModal').style.display = 'flex';
+        }
+
+        function closeExport() { document.getElementById('exportModal').style.display = 'none'; }
+        function copyExport() {
+            var copyText = document.getElementById("exportText");
+            copyText.select();
+            try { document.execCommand("copy"); alert("Teks berhasil disalin!"); } catch (e) { alert("Gagal menyalin."); }
+        }
+    });
+</script>
+
+</body>
+</html>
